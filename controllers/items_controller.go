@@ -1,10 +1,13 @@
 package controllers
 
 import (
-	"fmt"
+	"encoding/json"
 	"github.com/rotelando/bookstore_items-api/domain/items"
 	"github.com/rotelando/bookstore_items-api/services"
+	"github.com/rotelando/bookstore_items-api/utils/errors"
+	"github.com/rotelando/bookstore_items-api/utils/http_utils"
 	"github.com/rotelando/bookstore_oauth-go/oauth"
+	"io/ioutil"
 	"net/http"
 )
 
@@ -21,20 +24,34 @@ type itemsController struct{}
 
 func (it *itemsController) Create(w http.ResponseWriter, r *http.Request) {
 	if err := oauth.AuthenticateRequest(r); err != nil {
-		//TODO: Return json error to the user.
+		http_utils.SendError(w, (*errors.RestErr)(err))
 		return
 	}
 
-	item := items.Item{
-		Seller: oauth.GetCallerId(r),
-	}
-	result, err := services.ItemService.Create(item)
+	requestBody, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		//TODO: Return json error to the user
+		respErr := errors.NewBadRequestError("Invalid request body")
+		http_utils.SendError(w, respErr)
+		return
+	}
+	defer r.Body.Close()
+
+	var itemRequest items.Item
+	if err := json.Unmarshal(requestBody, &itemRequest); err != nil {
+		respErr := errors.NewBadRequestError("Invalid json body")
+		http_utils.SendError(w, respErr)
+		return
 	}
 
-	fmt.Println(result)
-	//TODO: Return created item as json with HTTP Status 201 - Created
+	itemRequest.Seller = oauth.GetClientId(r)
+
+	result, e := services.ItemService.Create(itemRequest)
+	if err != nil {
+		http_utils.SendError(w, e)
+		return
+	}
+
+	http_utils.SendJson(w, http.StatusCreated, result)
 }
 
 func (it *itemsController) Get(w http.ResponseWriter, r *http.Request) {
